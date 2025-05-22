@@ -28,7 +28,7 @@ type CalculatorBuilder struct {
 	mu        sync.Mutex
 }
 
-// NewCalculatorBuilder создает и инициализирует новый CalculatorBuilder
+// NewCalculatorBuilder создает и инициализирует новый CalculatorBuilderJ
 func NewCalculatorBuilder() *CalculatorBuilder {
 	return &CalculatorBuilder{
 		variables: make(map[string]int64),
@@ -93,8 +93,10 @@ ProcessInstructions выполняет список инструкций кон�
 Результаты собираются из print, а ошибки возвращаются если будут обнаружены.
 */
 func (cb *CalculatorBuilder) ProcessInstructions(instructions []Instruction) ([]ResultItem, error) {
-	//построение мапы зависимостей
+	//построение мапы зависимостей и определить, какие будут вычислены
 	deps := make(map[string][]string)
+	var printOrder []string
+	computedVars := make(map[string]bool)
 	for _, instr := range instructions {
 		if instr.Type == "calc" {
 			if leftStr, ok := instr.Left.(string); ok && leftStr != "" {
@@ -103,6 +105,9 @@ func (cb *CalculatorBuilder) ProcessInstructions(instructions []Instruction) ([]
 			if rightStr, ok := instr.Right.(string); ok && rightStr != "" {
 				deps[instr.Var] = append(deps[instr.Var], rightStr)
 			}
+			computedVars[instr.Var] = true
+		} else if instr.Type == "print" {
+			printOrder = append(printOrder, instr.Var)
 		}
 	}
 
@@ -191,6 +196,11 @@ func (cb *CalculatorBuilder) ProcessInstructions(instructions []Instruction) ([]
 				varMu.Unlock()
 			} else if instr.Type == "print" {
 				varName := instr.Var
+				// Проверить, будет ли переменная вычислена
+				if !computedVars[varName] {
+					errChan <- fmt.Errorf("variable %s not found", varName)
+					return
+				}
 				// Ждём, пока переменная будет вычислена
 				varMu.Lock()
 				for !computed[varName] {
@@ -226,9 +236,17 @@ func (cb *CalculatorBuilder) ProcessInstructions(instructions []Instruction) ([]
 		}
 	}
 
-	// Результат
+	// Результат в порядке, указанном в print
+	resultMap := make(map[string]ResultItem)
 	for res := range resultsChan {
-		cb.results = append(cb.results, res)
+		resultMap[res.Var] = res
+	}
+
+	cb.results = nil
+	for _, varName := range printOrder {
+		if res, exists := resultMap[varName]; exists {
+			cb.results = append(cb.results, res)
+		}
 	}
 
 	return cb.results, nil

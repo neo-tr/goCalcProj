@@ -53,7 +53,7 @@ func (cb *CalculatorBuilder) resolveOperand(operand interface{}) (int64, error) 
 	}
 }
 
-// hasCycle ищет циелические зависимости поиском в глубину dfs
+// hasCycle ищет циклические зависимости поиском в глубину dfs
 func hasCycle(deps map[string][]string) bool {
 	visited := make(map[string]bool)
 	recStack := make(map[string]bool)
@@ -87,7 +87,11 @@ func hasCycle(deps map[string][]string) bool {
 	return false
 }
 
-// ProcessInstructions обрабатывает список инструкций и возвращает результаты print-инструкций
+/*
+ProcessInstructions выполняет список инструкций конкурентно, обрабатывая операции calc и print.
+Строит граф зависимостей, проверяет наличие цикличности и обрабатывает инструкции при помощи горутин.
+Результаты собираются из print, а ошибки возвращаются если будут обнаружены.
+*/
 func (cb *CalculatorBuilder) ProcessInstructions(instructions []Instruction) ([]ResultItem, error) {
 	//построение мапы зависимостей
 	deps := make(map[string][]string)
@@ -106,47 +110,127 @@ func (cb *CalculatorBuilder) ProcessInstructions(instructions []Instruction) ([]
 		return nil, fmt.Errorf("cyclic dependency detected")
 	}
 
+	varMu := sync.Mutex{}
+	cond := sync.NewCond(&varMu)
+	computed := make(map[string]bool)
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(instructions))
+	resultsChan := make(chan ResultItem, len(instructions))
+
+	// Запуск горутины для каждой инструкции чтобы выполнить calc или print
 	for _, instr := range instructions {
-		if instr.Type == "calc" {
-			leftVal, err := cb.resolveOperand(instr.Left)
-			if err != nil {
-				return nil, fmt.Errorf("resolving left operand for %s: %w", instr.Var, err)
-			}
-			rightVal, err := cb.resolveOperand(instr.Right)
-			if err != nil {
-				return nil, fmt.Errorf("resolving right operand for %s: %w", instr.Var, err)
-			}
+		wg.Add(1)
+		go func(instr Instruction) {
+			defer wg.Done()
+			if instr.Type == "calc" {
+				//Определить зависимые переменные
+				var leftVar, rightVar string
+				if leftStr, ok := instr.Left.(string); ok {
+					leftVar = leftStr
+				}
+				if rightStr, ok := instr.Right.(string); ok {
+					rightVar = rightStr
+				}
 
-			var result int64
-			switch instr.Op {
-			case "+":
-				result = leftVal + rightVal
-			case "-":
-				result = leftVal - rightVal
-			case "*":
-				result = leftVal * rightVal
-			default:
-				return nil, fmt.Errorf("unsupported operation for %s: %s", instr.Var, instr.Op)
-			}
+				// Ждём, пока зависимые переменные не будут вычислены
+				if leftVar != "" {
+					varMu.Lock()
+					for !computed[leftVar] {
+						cond.Wait()
+					}
+					varMu.Unlock()
+				}
+				if rightVar != "" {
+					varMu.Lock()
+					for !computed[rightVar] {
+						cond.Wait()
+					}
+					varMu.Unlock()
+				}
 
-			cb.mu.Lock()
-			if _, exists := cb.variables[instr.Var]; exists {
+				// Получаем значения операндов
+				leftVal, err := cb.resolveOperand(instr.Left)
+				if err != nil {
+					errChan <- fmt.Errorf("resolving left operand for %s: %w", instr.Var, err)
+					return
+				}
+				rightVal, err := cb.resolveOperand(instr.Right)
+				if err != nil {
+					errChan <- fmt.Errorf("resolving right operand for %s: %w", instr.Var, err)
+					return
+				}
+
+				// Выполнение вычисления в зависимости от оператора
+				var result int64
+				switch instr.Op {
+				case "+":
+					result = leftVal + rightVal
+				case "-":
+					result = leftVal - rightVal
+				case "*":
+					result = leftVal * rightVal
+				default:
+					errChan <- fmt.Errorf("unsupported operation for %s: %s", instr.Var, instr.Op)
+					return
+				}
+
+				// Сохранить результат с проверкой на иммутабельность переменной
+				cb.mu.Lock()
+				if _, exists := cb.variables[instr.Var]; exists {
+					errChan <- fmt.Errorf("variable %s is immutable and cannot be reassigned", instr.Var)
+					cb.mu.Unlock()
+					return
+				}
+				cb.variables[instr.Var] = result
 				cb.mu.Unlock()
-				return nil, fmt.Errorf("variable %s is immutable and cannot be reassigned", instr.Var)
-			}
-			cb.variables[instr.Var] = result
-			cb.mu.Unlock()
-		} else if instr.Type == "print" {
-			cb.mu.Lock()
-			value, exists := cb.variables[instr.Var]
-			if !exists {
+
+				// Отметить переменную как вычисленную - true и оповестить другие горутины через Broadcast
+				varMu.Lock()
+				computed[instr.Var] = true
+				cond.Broadcast()
+				varMu.Unlock()
+			} else if instr.Type == "print" {
+				varName := instr.Var
+				// Ждём, пока переменная будет вычислена
+				varMu.Lock()
+				for !computed[varName] {
+					cond.Wait()
+				}
+				varMu.Unlock()
+
+				// Получаем значение переменной и отправляем его в канал - resultsChan или хэндлим ошибку в errChan
+				cb.mu.Lock()
+				value, exists := cb.variables[varName]
+				if !exists {
+					errChan <- fmt.Errorf("variable %s not found", varName)
+					cb.mu.Unlock()
+					return
+				}
+				resultsChan <- ResultItem{Var: varName, Value: value}
 				cb.mu.Unlock()
-				return nil, fmt.Errorf("variable %s not found", instr.Var)
 			}
-			cb.results = append(cb.results, ResultItem{Var: instr.Var, Value: value})
-			cb.mu.Unlock()
+		}(instr)
+	}
+
+	// Ждём пока всё выполнится и никто не будет слать, закрываем каналы
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+		close(errChan)
+	}()
+
+	// Проверка на наличие ошибок
+	for err := range errChan {
+		if err != nil {
+			return nil, err
 		}
 	}
+
+	// Результат
+	for res := range resultsChan {
+		cb.results = append(cb.results, res)
+	}
+
 	return cb.results, nil
 }
 

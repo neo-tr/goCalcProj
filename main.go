@@ -53,8 +53,59 @@ func (cb *CalculatorBuilder) resolveOperand(operand interface{}) (int64, error) 
 	}
 }
 
+// hasCycle ищет циелические зависимости поиском в глубину dfs
+func hasCycle(deps map[string][]string) bool {
+	visited := make(map[string]bool)
+	recStack := make(map[string]bool)
+
+	var dfs func(node string) bool
+	dfs = func(node string) bool {
+		visited[node] = true
+		recStack[node] = true
+
+		for _, neighbor := range deps[node] {
+			if !visited[neighbor] {
+				if dfs(neighbor) {
+					return true
+				}
+			} else if recStack[neighbor] {
+				return true
+			}
+		}
+
+		recStack[node] = false
+		return false
+	}
+
+	for node := range deps {
+		if !visited[node] {
+			if dfs(node) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ProcessInstructions обрабатывает список инструкций и возвращает результаты print-инструкций
 func (cb *CalculatorBuilder) ProcessInstructions(instructions []Instruction) ([]ResultItem, error) {
+	//построение мапы зависимостей
+	deps := make(map[string][]string)
+	for _, instr := range instructions {
+		if instr.Type == "calc" {
+			if leftStr, ok := instr.Left.(string); ok && leftStr != "" {
+				deps[instr.Var] = append(deps[instr.Var], leftStr)
+			}
+			if rightStr, ok := instr.Right.(string); ok && rightStr != "" {
+				deps[instr.Var] = append(deps[instr.Var], rightStr)
+			}
+		}
+	}
+
+	if hasCycle(deps) {
+		return nil, fmt.Errorf("cyclic dependency detected")
+	}
+
 	for _, instr := range instructions {
 		if instr.Type == "calc" {
 			leftVal, err := cb.resolveOperand(instr.Left)

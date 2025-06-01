@@ -1,0 +1,33 @@
+services:
+  calc-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: go-calc-server
+    ports:
+      - "50051:50051" # gRPC
+      - "8080:8080"   # HTTP/Swagger
+    networks:
+      - calc-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:8080/swagger.json"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./gen/openapi:/swagger
+    environment:
+      - SWAGGER_JSON=/swagger/calculator.swagger.json
+      - BASE_URL=/swagger
+    networks:
+      - calc-network
+
+networks:
+  calc-network:
+    driver: bridge

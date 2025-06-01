@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package calculator.v1;
+
+option go_package = "github.com/goCalcProj/gen/pb";
+
+import "google/api/annotations.proto";
+
+message Operand {
+  oneof value {
+    int64 number = 1;     // Числовое значение
+    string variable = 2;  // Имя переменной
+  }
+}
+
+// Инструкция определяет операцию вычисления или вывода значения
+message Instruction {
+  string type = 1;    // Тип операции: "calc" (вычисление) или "print" (вывод)
+  string op = 2;      // Оператор для вычисления: "+", "-", "*"
+  string var = 3;     // Имя переменной
+  Operand left = 4;   // Левый операнд (число или переменная)
+  Operand right = 5;  // Правый операнд (число или переменная)
+}
+
+// Результат для инструкций вывода
+message ResultItem {
+  string var = 1;   // Имя переменной
+  int64 value = 2;  // Вычисленное значение
+}
+
+// Запрос с инструкциями для обработки
+message ProcessInstructionsRequest {
+  repeated Instruction instructions = 1;
+}
+
+// Ответ с результатами инструкций вывода
+message ProcessInstructionsResponse {
+  repeated ResultItem items = 1;
+}
+
+// gRPC-сервис для обработки инструкций
+service CalculatorService {
+  rpc ProcessInstructions(ProcessInstructionsRequest) returns (ProcessInstructionsResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/instructions"
+      body: "*"
+    };
+  }
+}

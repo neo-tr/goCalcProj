@@ -1,0 +1,167 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "calculator.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "CalculatorService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/api/v1/instructions": {
+      "post": {
+        "summary": "ProcessInstructions processes a list of instructions and returns print results",
+        "operationId": "CalculatorService_ProcessInstructions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ProcessInstructionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ProcessInstructionsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "CalculatorService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1Instruction": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "Operation type: \"calc\" or \"print\""
+        },
+        "op": {
+          "type": "string",
+          "title": "Operator for calc: \"+\", \"-\", \"*\""
+        },
+        "var": {
+          "type": "string",
+          "title": "Variable name (e.g., \"x\")"
+        },
+        "left": {
+          "$ref": "#/definitions/v1Operand",
+          "title": "Left operand (number or variable)"
+        },
+        "right": {
+          "$ref": "#/definitions/v1Operand",
+          "title": "Right operand (number or variable)"
+        }
+      },
+      "title": "Instruction defines a calc or print operation"
+    },
+    "v1Operand": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "string",
+          "format": "int64",
+          "description": "Numeric value for calculations (e.g., 10), minimum 0."
+        },
+        "variable": {
+          "type": "string",
+          "description": "Single-letter variable name (e.g., \"x\")."
+        }
+      },
+      "title": "Operand defines a value that can be either a number or a variable reference"
+    },
+    "v1ProcessInstructionsRequest": {
+      "type": "object",
+      "properties": {
+        "instructions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Instruction"
+          },
+          "title": "Array of instructions"
+        }
+      },
+      "title": "ProcessInstructionsRequest contains a list of instructions to process"
+    },
+    "v1ProcessInstructionsResponse": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ResultItem"
+          },
+          "title": "Array of print results"
+        }
+      },
+      "title": "ProcessInstructionsResponse contains the results of print instructions"
+    },
+    "v1ResultItem": {
+      "type": "object",
+      "properties": {
+        "var": {
+          "type": "string",
+          "title": "Variable name"
+        },
+        "value": {
+          "type": "string",
+          "format": "int64",
+          "title": "Computed value"
+        }
+      },
+      "title": "ResultItem holds the output for print instructions"
+    }
+  }
+}

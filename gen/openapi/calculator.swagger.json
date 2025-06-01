@@ -4,6 +4,9 @@
     "title": "calculator.proto",
     "version": "version not set"
   },
+  "host": "localhost:8080",
+  "basePath": "/",
+  "schemes": ["http"],
   "tags": [
     {
       "name": "CalculatorService"
@@ -109,7 +112,7 @@
       "type": "object",
       "properties": {
         "number": {
-          "type": "string",
+          "type": "integer",
           "format": "int64",
           "description": "Numeric value for calculations (e.g., 10), minimum 0."
         },
@@ -156,7 +159,7 @@
           "title": "Variable name"
         },
         "value": {
-          "type": "string",
+          "type": "integer",
           "format": "int64",
           "title": "Computed value"
         }

@@ -66,6 +66,29 @@ func toOperand(v interface{}) (*pb.Operand, error) {
 		return &pb.Operand{
 			Value: &pb.Operand_Variable{Variable: val},
 		}, nil
+	case map[string]interface{}:
+		// Новый блок: пришёл JSON-объект, например {"number": 1} или {"variable": "x"}
+		if numRaw, ok := val["number"]; ok {
+			// проверяем, что тип у numRaw — число
+			if numF, ok2 := numRaw.(float64); ok2 {
+				if numF != float64(int64(numF)) {
+					return nil, fmt.Errorf("операнд.number должен быть целым числом")
+				}
+				return &pb.Operand{
+					Value: &pb.Operand_Number{Number: int64(numF)},
+				}, nil
+			}
+			return nil, fmt.Errorf("значение number должно быть числом")
+		}
+		if varRaw, ok := val["variable"]; ok {
+			if varStr, ok2 := varRaw.(string); ok2 {
+				return &pb.Operand{
+					Value: &pb.Operand_Variable{Variable: varStr},
+				}, nil
+			}
+			return nil, fmt.Errorf("значение variable должно быть строкой")
+		}
+		return nil, fmt.Errorf("в объекте ожидался ключ \"number\" или \"variable\"")
 	default:
 		return nil, fmt.Errorf("неподдерживаемый тип операнда: %T", v)
 	}
